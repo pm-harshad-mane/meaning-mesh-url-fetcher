@@ -1,0 +1,7 @@
+boto3
+beautifulsoup4
+curl_cffi
+pydantic>=2,<3
+python-json-logger
+pytest
+xxhash
