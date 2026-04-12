@@ -20,3 +20,11 @@ pytest
 ```
 
 Handler: `app.handler.lambda_handler`
+
+## Build Lambda Package
+
+Build a Linux ARM64-compatible deployment zip into `dist/lambda.zip`:
+
+```bash
+./scripts/build_lambda_package.sh
+```
