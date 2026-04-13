@@ -25,6 +25,7 @@ class CategorizerQueueMessage(BaseModel):
     normalized_url: str
     trace_id: str
     fetched_at: int
+    fetched_at_ms: int | None = None
     http_status: int
     content_type: str
     title: str
@@ -47,6 +48,11 @@ class CategorizationRecord(BaseModel):
     source_http_status: int | None = None
     source_content_type: str | None = None
     title: str | None = None
+    categorizer_dequeued_at_ms: int | None = None
+    categorizer_started_at_ms: int | None = None
+    categorizer_finished_at_ms: int | None = None
+    categorizer_queue_wait_ms: int | None = None
+    categorization_compute_ms: int | None = None
 
 
 class PageContent(BaseModel):

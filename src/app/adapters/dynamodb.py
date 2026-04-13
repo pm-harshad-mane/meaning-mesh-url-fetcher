@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from decimal import Decimal
 from typing import Any
 
 import boto3
@@ -28,7 +29,19 @@ class DynamoStorage:
         )
 
     def put_categorization(self, record: CategorizationRecord) -> None:
-        self._categorization_table.put_item(Item=record.model_dump())
+        self._categorization_table.put_item(
+            Item=_to_dynamodb_value(record.model_dump())
+        )
 
     def delete_wip(self, url_hash: str) -> None:
         self._wip_table.delete_item(Key={"url_hash": url_hash})
+
+
+def _to_dynamodb_value(value: Any) -> Any:
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, list):
+        return [_to_dynamodb_value(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _to_dynamodb_value(item) for key, item in value.items()}
+    return value

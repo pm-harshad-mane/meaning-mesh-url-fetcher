@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 
 from app.config import Settings
+from app.adapters.dynamodb import _to_dynamodb_value
 from app.fetching.beautiful_soup_fetcher import FetchFailure
 from app.models import CategorizerQueueMessage, FetchQueueMessage, PageContent
 from app.services.fetch_service import FetchService
@@ -86,6 +88,15 @@ def test_process_message_enqueues_categorizer_job_on_success() -> None:
     assert storage.deleted == []
     assert len(publisher.messages) == 1
     assert publisher.messages[0].content
+
+
+def test_to_dynamodb_value_converts_nested_floats_to_decimal() -> None:
+    converted = _to_dynamodb_value(
+        {"score": 1.0, "categories": [{"score": 0.125, "rank": 1}]}
+    )
+
+    assert converted["score"] == Decimal("1.0")
+    assert converted["categories"][0]["score"] == Decimal("0.125")
 
 
 def _message() -> FetchQueueMessage:

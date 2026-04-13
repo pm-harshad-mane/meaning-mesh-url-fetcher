@@ -14,7 +14,7 @@ from app.models import (
     PageContent,
 )
 from app.utils.content import build_content_text, fingerprint_text, truncate_utf8
-from app.utils.time import unix_timestamp
+from app.utils.time import unix_timestamp, unix_timestamp_ms
 
 LOGGER = logging.getLogger(__name__)
 
@@ -81,13 +81,16 @@ class FetchService:
         bounded_content = truncate_utf8(content, max_bytes=self.settings.max_content_bytes)
         fingerprint = fingerprint_text(bounded_content)
 
+        fetched_at_ms = unix_timestamp_ms()
+
         self.storage.update_wip_state(message.url_hash, "categorizing", unix_timestamp())
         self.queue_publisher.send_categorizer_job(
             CategorizerQueueMessage(
                 url_hash=message.url_hash,
                 normalized_url=message.normalized_url,
                 trace_id=message.trace_id,
-                fetched_at=unix_timestamp(),
+                fetched_at=fetched_at_ms // 1000,
+                fetched_at_ms=fetched_at_ms,
                 http_status=page.http_status,
                 content_type=page.content_type,
                 title=page.title,

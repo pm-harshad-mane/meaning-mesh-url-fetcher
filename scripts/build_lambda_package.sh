@@ -11,11 +11,12 @@ mkdir -p "${PACKAGE_DIR}" "${DIST_DIR}"
 
 docker run --rm \
   --platform linux/arm64 \
+  --entrypoint /bin/sh \
   -u "$(id -u):$(id -g)" \
   -v "${ROOT_DIR}:/workspace" \
   -w /workspace \
   public.ecr.aws/lambda/python:3.11 \
-  /bin/sh -lc "python -m pip install --no-cache-dir -r requirements.txt -t build/lambda/package"
+  -lc "python -m pip install --no-cache-dir -r requirements.txt -t build/lambda/package"
 
 cp -R "${ROOT_DIR}/src/." "${PACKAGE_DIR}/"
 
