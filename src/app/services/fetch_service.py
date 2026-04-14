@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -10,8 +11,8 @@ from app.models import (
     CategorizationRecord,
     CategorizerQueueMessage,
     Category,
+    FetchedPage,
     FetchQueueMessage,
-    PageContent,
 )
 from app.utils.content import build_content_text, fingerprint_text, truncate_utf8
 from app.utils.time import unix_timestamp, unix_timestamp_ms
@@ -32,7 +33,7 @@ class QueuePublisherProtocol(Protocol):
 
 
 class PageFetcherProtocol(Protocol):
-    def __call__(self, url: str, *, timeout: int) -> PageContent: ...
+    def __call__(self, url: str, *, timeout: int) -> FetchedPage: ...
 
 
 @dataclass
@@ -43,15 +44,19 @@ class FetchService:
     page_fetcher: PageFetcherProtocol = fetch_page_content
 
     def process_message(self, message: FetchQueueMessage) -> None:
+        process_start = time.perf_counter()
         now = unix_timestamp()
+        update_fetching_start = time.perf_counter()
         self.storage.update_wip_state(message.url_hash, "fetching", now)
+        dynamodb_mark_fetching_ms = _elapsed_ms(update_fetching_start)
 
         try:
-            page = self.page_fetcher(
+            fetched_page = self.page_fetcher(
                 message.normalized_url,
                 timeout=max(1, self.settings.fetch_total_timeout_ms // 1000),
             )
         except FetchFailure as exc:
+            put_unknown_start = time.perf_counter()
             LOGGER.info(
                 "fetch_failed",
                 extra={
@@ -69,9 +74,32 @@ class FetchService:
                     http_status=exc.status_code,
                 )
             )
+            dynamodb_put_unknown_ms = _elapsed_ms(put_unknown_start)
+
+            delete_wip_start = time.perf_counter()
             self.storage.delete_wip(message.url_hash)
+            dynamodb_delete_wip_ms = _elapsed_ms(delete_wip_start)
+
+            LOGGER.info(
+                "fetch_timing",
+                extra={
+                    "url_hash": message.url_hash,
+                    "trace_id": message.trace_id,
+                    "result": "fetch_failed",
+                    "http_fetch_ms": 0,
+                    "html_parse_ms": 0,
+                    "html_extract_ms": 0,
+                    "dynamodb_mark_fetching_ms": dynamodb_mark_fetching_ms,
+                    "dynamodb_mark_categorizing_ms": 0,
+                    "dynamodb_put_unknown_ms": dynamodb_put_unknown_ms,
+                    "dynamodb_delete_wip_ms": dynamodb_delete_wip_ms,
+                    "sqs_send_ms": 0,
+                    "total_process_ms": _elapsed_ms(process_start),
+                },
+            )
             return
 
+        page = fetched_page.page
         content = build_content_text(
             page.title,
             page.meta_description,
@@ -83,7 +111,11 @@ class FetchService:
 
         fetched_at_ms = unix_timestamp_ms()
 
+        update_categorizing_start = time.perf_counter()
         self.storage.update_wip_state(message.url_hash, "categorizing", unix_timestamp())
+        dynamodb_mark_categorizing_ms = _elapsed_ms(update_categorizing_start)
+
+        sqs_send_start = time.perf_counter()
         self.queue_publisher.send_categorizer_job(
             CategorizerQueueMessage(
                 url_hash=message.url_hash,
@@ -98,6 +130,7 @@ class FetchService:
                 content_fingerprint=fingerprint,
             )
         )
+        sqs_send_ms = _elapsed_ms(sqs_send_start)
         LOGGER.info(
             "fetch_completed",
             extra={
@@ -105,6 +138,23 @@ class FetchService:
                 "trace_id": message.trace_id,
                 "content_fingerprint": fingerprint,
                 "fetched_at_ms": fetched_at_ms,
+            },
+        )
+        LOGGER.info(
+            "fetch_timing",
+            extra={
+                "url_hash": message.url_hash,
+                "trace_id": message.trace_id,
+                "result": "fetch_completed",
+                "http_fetch_ms": fetched_page.http_fetch_ms,
+                "html_parse_ms": fetched_page.html_parse_ms,
+                "html_extract_ms": fetched_page.html_extract_ms,
+                "dynamodb_mark_fetching_ms": dynamodb_mark_fetching_ms,
+                "dynamodb_mark_categorizing_ms": dynamodb_mark_categorizing_ms,
+                "dynamodb_put_unknown_ms": 0,
+                "dynamodb_delete_wip_ms": 0,
+                "sqs_send_ms": sqs_send_ms,
+                "total_process_ms": _elapsed_ms(process_start),
             },
         )
 
@@ -138,3 +188,7 @@ class FetchService:
             error_message=error_message,
             source_http_status=http_status,
         )
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)

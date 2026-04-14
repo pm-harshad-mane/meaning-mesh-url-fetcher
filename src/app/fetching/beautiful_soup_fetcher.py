@@ -9,6 +9,7 @@ contract.
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from typing import Dict, List, Optional
 from urllib.parse import urlparse
@@ -17,7 +18,7 @@ from bs4 import BeautifulSoup, Tag
 from curl_cffi import requests
 from curl_cffi.requests.exceptions import HTTPError, RequestException, Timeout
 
-from app.models import PageContent
+from app.models import FetchedPage, PageContent
 
 DEFAULT_REQUEST_TIMEOUT = 9
 RETRYABLE_HTTP_STATUS_CODES = {408, 425, 429, 500, 502, 503, 504}
@@ -269,9 +270,16 @@ def _strip_noise(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
-def fetch_page_content(url: str, *, timeout: int = DEFAULT_REQUEST_TIMEOUT) -> PageContent:
+def fetch_page_content(url: str, *, timeout: int = DEFAULT_REQUEST_TIMEOUT) -> FetchedPage:
+    http_fetch_start = time.perf_counter()
     response = _fetch_url_response(url, timeout)
+    http_fetch_ms = _elapsed_ms(http_fetch_start)
+
+    html_parse_start = time.perf_counter()
     soup = BeautifulSoup(response.text, "html.parser")
+    html_parse_ms = _elapsed_ms(html_parse_start)
+
+    html_extract_start = time.perf_counter()
     _remove_noise_nodes(soup)
 
     title = (
@@ -294,13 +302,22 @@ def fetch_page_content(url: str, *, timeout: int = DEFAULT_REQUEST_TIMEOUT) -> P
         body_text = _extract_body_text(root)
 
     parsed = urlparse(str(response.url))
-    return PageContent(
-        url=str(response.url),
-        domain=parsed.netloc.lower(),
-        title=_strip_noise(title),
-        meta_description=_strip_noise(meta_description),
-        headings=[h for h in (_strip_noise(h) for h in headings) if h],
-        body_text=_strip_noise(body_text),
-        http_status=int(response.status_code),
-        content_type=str(response.headers.get("content-type", "text/html")),
+    return FetchedPage(
+        page=PageContent(
+            url=str(response.url),
+            domain=parsed.netloc.lower(),
+            title=_strip_noise(title),
+            meta_description=_strip_noise(meta_description),
+            headings=[h for h in (_strip_noise(h) for h in headings) if h],
+            body_text=_strip_noise(body_text),
+            http_status=int(response.status_code),
+            content_type=str(response.headers.get("content-type", "text/html")),
+        ),
+        http_fetch_ms=http_fetch_ms,
+        html_parse_ms=html_parse_ms,
+        html_extract_ms=_elapsed_ms(html_extract_start),
     )
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)

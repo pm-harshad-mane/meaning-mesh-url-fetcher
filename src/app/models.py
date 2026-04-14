@@ -66,6 +66,13 @@ class PageContent(BaseModel):
     content_type: str
 
 
+class FetchedPage(BaseModel):
+    page: PageContent
+    http_fetch_ms: int
+    html_parse_ms: int
+    html_extract_ms: int
+
+
 class WipStateUpdate(BaseModel):
     url_hash: str
     normalized_url: str
