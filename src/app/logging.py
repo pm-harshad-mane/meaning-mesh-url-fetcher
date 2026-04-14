@@ -8,9 +8,8 @@ from pythonjsonlogger import jsonlogger
 
 def configure_logging(level: str) -> None:
     root_logger = logging.getLogger()
-    if root_logger.handlers:
-        root_logger.setLevel(level)
-        return
+    for handler in list(root_logger.handlers):
+        root_logger.removeHandler(handler)
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(

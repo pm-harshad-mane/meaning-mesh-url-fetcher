@@ -98,6 +98,15 @@ class FetchService:
                 content_fingerprint=fingerprint,
             )
         )
+        LOGGER.info(
+            "fetch_completed",
+            extra={
+                "url_hash": message.url_hash,
+                "trace_id": message.trace_id,
+                "content_fingerprint": fingerprint,
+                "fetched_at_ms": fetched_at_ms,
+            },
+        )
 
     def _build_unknown_record(
         self,
